@@ -24,8 +24,6 @@ type RowData = {
   movies: Movie[]
 }
 
-const API_KEY = '3bba58aada6bc487011deb8f393b0d02'
-const BASE_URL = 'https://api.themoviedb.org/3'
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/original'
 const POSTER_BASE = 'https://image.tmdb.org/t/p/w500'
 
@@ -40,8 +38,25 @@ const ROWS: RowConfig[] = [
 
 const iconItems = ['\u2315', '\u2302', '\u2318', '\u25ad', '\u2197', '+', '\u267a']
 
-const withApiKey = (endpoint: string) =>
-  `${BASE_URL}${endpoint}${endpoint.includes('?') ? '&' : '?'}api_key=${API_KEY}&language=en-US&page=1`
+const fetchFromServerApi = async <T,>(endpoint: string): Promise<T> => {
+  const response = await fetch(`/api/tmdb?endpoint=${encodeURIComponent(endpoint)}`)
+  const rawBody = await response.text()
+
+  let parsedBody: unknown
+  try {
+    parsedBody = rawBody ? JSON.parse(rawBody) : {}
+  } catch {
+    throw new Error(`Server returned non-JSON response (${response.status}).`)
+  }
+
+  if (!response.ok) {
+    const maybeObject = typeof parsedBody === 'object' && parsedBody !== null ? parsedBody : {}
+    const message = 'error' in maybeObject && typeof maybeObject.error === 'string' ? maybeObject.error : 'Request failed.'
+    throw new Error(`${message} (${response.status})`)
+  }
+
+  return parsedBody as T
+}
 
 const getMovieTitle = (movie: Movie) => movie.title || movie.name || 'Untitled'
 
@@ -66,18 +81,13 @@ function App() {
       try {
         setLoading(true)
         setError('')
-        const requests = ROWS.map((row) =>
-          fetch(withApiKey(row.endpoint)).then(async (res) => {
-            if (!res.ok) {
-              throw new Error(`TMDB request failed for ${row.title} (${res.status})`)
-            }
-            const data = (await res.json()) as { results?: Movie[] }
-            return {
-              title: row.title,
-              movies: (data.results || []).filter((m) => m.poster_path || m.backdrop_path).slice(0, 20),
-            }
-          }),
-        )
+        const requests = ROWS.map(async (row) => {
+          const data = await fetchFromServerApi<{ results?: Movie[] }>(row.endpoint)
+          return {
+            title: row.title,
+            movies: (data.results || []).filter((m) => m.poster_path || m.backdrop_path).slice(0, 20),
+          }
+        })
 
         const resolvedRows = await Promise.all(requests)
         setRows(resolvedRows)
@@ -105,19 +115,13 @@ function App() {
       setOpeningTrailerId(movie.id)
       setTrailerError('')
       const mediaType = movie.media_type === 'tv' ? 'tv' : 'movie'
-      const response = await fetch(withApiKey(`/${mediaType}/${movie.id}/videos`))
-
-      if (!response.ok) {
-        throw new Error(`Trailer lookup failed (${response.status})`)
-      }
-
-      const data = (await response.json()) as {
+      const data = await fetchFromServerApi<{
         results?: Array<{
           site?: string
           key?: string
           type?: string
         }>
-      }
+      }>(`/${mediaType}/${movie.id}/videos`)
 
       const youtubeVideos = (data.results || []).filter(
         (video) => video.site === 'YouTube' && video.key,
@@ -185,7 +189,7 @@ function App() {
         {loading && <p className="status-text">Loading movies from TMDB...</p>}
         {error && (
           <p className="status-text error">
-            Could not fetch TMDB data. Check API key/network.
+            Could not fetch TMDB data. Check server env var/network.
             <br />
             <small>{error}</small>
           </p>
