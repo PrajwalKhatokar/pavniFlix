@@ -177,7 +177,9 @@ function App() {
             <p className="meta">{heroMeta}</p>
             <p className="overview">{heroDescription}</p>
             <div className="hero-actions">
-              <button className="play-btn">Play</button>
+              <button className="play-btn" onClick={openHeroTrailer} disabled={openingTrailer}>
+                {openingTrailer ? 'Opening...' : 'Play'}
+              </button>
               <button className="secondary-btn" onClick={openHeroTrailer} disabled={openingTrailer}>
                 {openingTrailer ? 'Opening...' : 'Watch Trailer'}
               </button>
